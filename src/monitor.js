@@ -84,33 +84,76 @@ const CODE_BLOCKLIST = new Set([
   'AUTHORIZATION'
 ]);
 
-function loadDotEnv() {
-  return fs.readFile('.env', 'utf8')
-    .then((content) => {
-      for (const rawLine of content.split(/\r?\n/)) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith('#')) continue;
+function parseDotEnvContent(content) {
+  const entries = new Map();
 
-        const index = line.indexOf('=');
-        if (index === -1) continue;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
 
-        const key = line.slice(0, index).trim();
-        let value = line.slice(index + 1).trim();
-        if (
-          (value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))
-        ) {
-          value = value.slice(1, -1);
-        }
+    const index = line.indexOf('=');
+    if (index === -1) continue;
 
-        if (key && process.env[key] === undefined) {
-          process.env[key] = value;
-        }
-      }
-    })
-    .catch((error) => {
-      if (error.code !== 'ENOENT') throw error;
-    });
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (key) {
+      entries.set(key, value);
+    }
+  }
+
+  return entries;
+}
+
+async function syncDotEnv() {
+  let content;
+
+  try {
+    content = await fs.readFile(DOTENV_FILE, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { changedKeys: [], removedKeys: [], missing: true };
+    }
+
+    throw error;
+  }
+
+  const entries = parseDotEnvContent(content);
+  const changedKeys = [];
+  const removedKeys = [];
+
+  for (const [key, value] of entries) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+      DOTENV_SOURCE_KEYS.add(key);
+      changedKeys.push(key);
+      continue;
+    }
+
+    if (DOTENV_SOURCE_KEYS.has(key) && process.env[key] !== value) {
+      process.env[key] = value;
+      changedKeys.push(key);
+    }
+  }
+
+  for (const key of Array.from(DOTENV_SOURCE_KEYS)) {
+    if (entries.has(key)) continue;
+
+    if (process.env[key] !== undefined) {
+      delete process.env[key];
+    }
+
+    DOTENV_SOURCE_KEYS.delete(key);
+    removedKeys.push(key);
+  }
+
+  return { changedKeys, removedKeys, missing: false };
 }
 
 function readBoolean(value, fallback) {
@@ -423,8 +466,38 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function uniqueList(values) {
+  return Array.from(new Set(values));
+}
+
+function formatDotEnvChange(keys) {
+  return uniqueList(keys).join(', ');
+}
+
+async function waitWithHotReload(intervalMs) {
+  const stepMs = Math.min(1000, intervalMs);
+  let remainingMs = intervalMs;
+
+  while (remainingMs > 0) {
+    await delay(Math.min(stepMs, remainingMs));
+    remainingMs -= stepMs;
+
+    const syncResult = await syncDotEnv();
+    const changedKeys = uniqueList([...syncResult.changedKeys, ...syncResult.removedKeys]);
+
+    if (changedKeys.length > 0) {
+      console.log(
+        `[${new Date().toISOString()}] 检测到 .env 变更，已热加载：${formatDotEnvChange(changedKeys)}`
+      );
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function main() {
-  await loadDotEnv();
+  await syncDotEnv();
 
   const config = getConfig();
   if (!config.webhook) {
@@ -443,7 +516,10 @@ async function main() {
       console.error(`[${new Date().toISOString()}] 扫描失败：${error.message}`);
     }
 
-    await delay(config.pollIntervalMs);
+    const reloaded = await waitWithHotReload(config.pollIntervalMs);
+    if (reloaded) {
+      Object.assign(config, getConfig());
+    }
   }
 }
 
@@ -460,3 +536,4 @@ module.exports = {
   buildFeishuPayload,
   signFeishuPayload
 };
+

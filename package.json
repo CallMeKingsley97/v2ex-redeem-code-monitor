@@ -1,0 +1,14 @@
+{
+  "name": "v2ex-redeem-code-monitor",
+  "version": "1.0.0",
+  "description": "监听 V2EX 疑似 Apple App 兑换码帖子，并通过飞书机器人推送。",
+  "main": "src/monitor.js",
+  "scripts": {
+    "start": "node src/monitor.js",
+    "check": "node --check src/monitor.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

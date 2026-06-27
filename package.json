@@ -5,7 +5,10 @@
   "main": "src/monitor.js",
   "scripts": {
     "start": "node src/monitor.js",
-    "check": "node --check src/monitor.js"
+    "check": "node --check src/monitor.js",
+    "worker:check": "node --check workers/v2ex-monitor.mjs",
+    "worker:dev": "npx wrangler dev --test-scheduled",
+    "worker:deploy": "npx wrangler deploy"
   },
   "engines": {
     "node": ">=18.0.0"

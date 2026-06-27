@@ -1,0 +1,7 @@
+FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# 如果飞书机器人启用了“签名校验”，填写密钥；未启用则留空。
+FEISHU_SECRET=
+
+# 可选：配置后可以用 POST /scan 手动触发一次扫描。
+ADMIN_TOKEN=

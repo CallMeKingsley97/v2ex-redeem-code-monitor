@@ -3,4 +3,4 @@
 .wrangler/
 data/
 *.log
-.wrangler.jsonc
+wrangler.jsonc

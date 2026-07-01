@@ -5,8 +5,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const DEFAULT_API_URL = 'https://www.v2ex.com/api/topics/latest.json';
+const DOTENV_FILE = '.env';
 const DEFAULT_STATE_FILE = './data/v2ex-monitor-state.json';
 const MAX_STATE_ITEMS = 1000;
+const DOTENV_SOURCE_KEYS = new Set();
 
 const STRONG_KEYWORDS = [
   '兑换码',
@@ -23,7 +25,10 @@ const STRONG_KEYWORDS = [
   '码在',
   '码已',
   '免费码',
-  '兑换链接'
+  '兑换链接',
+  '兑换地址',
+  'offer code',
+  'offercodes'
 ];
 
 const APP_CONTEXT_KEYWORDS = [
@@ -63,11 +68,19 @@ const GIVEAWAY_KEYWORDS = [
 const NEGATIVE_KEYWORDS = [
   '验证码',
   '邀请码',
-  '优惠码',
-  '折扣码',
-  'coupon',
   '验证码登录',
   '两步验证'
+];
+
+const DISCOUNT_NEGATIVE_KEYWORDS = [
+  '优惠码',
+  '折扣码',
+  'coupon'
+];
+
+const APP_STORE_REDEEM_KEYWORDS = [
+  'apps.apple.com/redeem',
+  'offercodes'
 ];
 
 const CODE_BLOCKLIST = new Set([
@@ -258,7 +271,7 @@ function extractCodes(text) {
 
   for (const match of matches) {
     const code = match.replace(/-/g, '').toUpperCase();
-    if (code.length < 8 || code.length > 16) continue;
+    if (code.length < 8 || code.length > 20) continue;
     if (/^\d+$/.test(code)) continue;
     if (/^[A-Z]+$/.test(code) && CODE_BLOCKLIST.has(code)) continue;
     if (CODE_BLOCKLIST.has(code)) continue;
@@ -282,23 +295,30 @@ function scoreTopic(topic) {
   const codes = extractCodes(combined);
   const reasons = [];
   let score = 0;
+  const hasAppContext = containsAny(lower, APP_CONTEXT_KEYWORDS);
+  const hasStrongKeyword = containsAny(lower, STRONG_KEYWORDS);
+  const hasGiveawayContext = containsAny(lower, GIVEAWAY_KEYWORDS);
+  const hasAppStoreRedeemContext = containsAny(lower, APP_STORE_REDEEM_KEYWORDS);
 
-  if (containsAny(lower, NEGATIVE_KEYWORDS)) {
+  if (
+    containsAny(lower, NEGATIVE_KEYWORDS) ||
+    (containsAny(lower, DISCOUNT_NEGATIVE_KEYWORDS) && !hasAppContext && !hasAppStoreRedeemContext)
+  ) {
     score -= 4;
     reasons.push('包含容易误判的负向词');
   }
 
-  if (containsAny(lower, STRONG_KEYWORDS)) {
+  if (hasStrongKeyword) {
     score += 5;
     reasons.push('包含兑换码强关键词');
   }
 
-  if (containsAny(lower, APP_CONTEXT_KEYWORDS)) {
+  if (hasAppContext) {
     score += 2;
     reasons.push('包含 Apple/App 相关上下文');
   }
 
-  if (containsAny(lower, GIVEAWAY_KEYWORDS)) {
+  if (hasGiveawayContext) {
     score += 2;
     reasons.push('包含赠送/限量上下文');
   }
@@ -309,7 +329,7 @@ function scoreTopic(topic) {
   }
 
   // 只有孤立大写串但没有 App 或兑换上下文时，容易误报为版本号、缩写或日志片段。
-  if (codes.length > 0 && !containsAny(lower, STRONG_KEYWORDS) && !containsAny(lower, APP_CONTEXT_KEYWORDS)) {
+  if (codes.length > 0 && !hasStrongKeyword && !hasAppContext) {
     score -= 3;
     reasons.push('疑似码缺少兑换/App 上下文');
   }

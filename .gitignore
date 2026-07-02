@@ -4,3 +4,5 @@
 data/
 *.log
 wrangler.jsonc
+.codegraph
+.agents
